@@ -1,0 +1,62 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index a7ad06f..88555d6 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -5,14 +5,17 @@ project(KinesisVideoProducerCpp)
+ 
+ project(KinesisVideoProducerCpp VERSION 3.4.2)
+ 
+-set(CMAKE_CXX_STANDARD 11)
++set(CMAKE_CXX_STANDARD_REQUIRED ON)
++if(NOT DEFINED CMAKE_CXX_STANDARD)
++    set(CMAKE_CXX_STANDARD 11)
++endif()
+ include(GNUInstallDirs)
+ 
+ # User Flags
+ option(BUILD_GSTREAMER_PLUGIN "Build kvssink GStreamer plugin" OFF)
+-option(BUILD_STATIC "Build with static linkage" OFF)
++option(BUILD_STATIC "Build with static linkage" ON)
+ option(ADD_MUCLIBC "Add -muclibc c flag" OFF)
+-option(BUILD_DEPENDENCIES "Whether or not to build depending libraries from source" ON)
++option(BUILD_DEPENDENCIES "Whether or not to build depending libraries from source" OFF)
+ option(BUILD_OPENSSL_PLATFORM "If buildng OpenSSL what is the target platform" OFF)
+ option(BUILD_LOG4CPLUS_HOST "Specify host-name for log4cplus for cross-compilation" OFF)
+ option(PARALLEL_BUILD "Build dependencies with parallel flag" ON)
+@@ -170,26 +173,23 @@ file(GLOB PRODUCER_CPP_SOURCE_FILES "src/*.cpp" "src/common/*.cpp" "src/credenti
+ file(GLOB GST_PLUGIN_SOURCE_FILES "src/gstreamer/*.cpp" "src/gstreamer/Util/*.cpp")
+ file(GLOB PIC_HEADERS "${pic_project_SOURCE_DIR}/src/*/include")
+ 
+-include_directories(${PIC_HEADERS})
+-include_directories(${KinesisVideoProducerC_SOURCE_DIR}/src/include)
+-include_directories(${OPEN_SRC_INCLUDE_DIRS})
+-include_directories(${KINESIS_VIDEO_OPEN_SOURCE_SRC}/include)
+-include_directories(${KINESIS_VIDEO_PRODUCER_CPP_SRC}/src)
+-include_directories(${KINESIS_VIDEO_PRODUCER_CPP_SRC}/src/credential-providers)
+-include_directories(${KINESIS_VIDEO_PRODUCER_CPP_SRC}/src/common)
+-
+-install(
+-  DIRECTORY ${KINESIS_VIDEO_PRODUCER_CPP_SRC}/src
+-  DESTINATION .)
+-
+ add_library(KinesisVideoProducer ${LINKAGE} ${PRODUCER_CPP_SOURCE_FILES})
+ target_link_libraries(
+   KinesisVideoProducer
+   PUBLIC kvsCommonCurl
+          cproducer
+-         ${Log4cplus}
++         ${LOG4CPLUS_LIBRARIES}
+          ${LIBCURL_LIBRARIES})
+ 
++target_include_directories(KinesisVideoProducer PUBLIC
++  ${PIC_HEADERS}
++  ${KinesisVideoProducerC_SOURCE_DIR}/src/include
++  ${KINESIS_VIDEO_OPEN_SOURCE_SRC}/include
++  ${KINESIS_VIDEO_PRODUCER_CPP_SRC}/src
++  ${KINESIS_VIDEO_PRODUCER_CPP_SRC}/src/credential-providers
++  ${KINESIS_VIDEO_PRODUCER_CPP_SRC}/src/common
++)
++
+ install(
+     TARGETS KinesisVideoProducer
+     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
