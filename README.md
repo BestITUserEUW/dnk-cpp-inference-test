@@ -1,6 +1,6 @@
 # dnk-cpp-infernence-test
 
-A minimal C++ inference test project. Tested on x86_64 included libdenkflow.so is for x86_64 linux version 0.7.7-b8. As inputs a sample cookie hole detection was used 
+A minimal C++ 20 denkweit inference test project. Tested on x86_64 included libdenkflow.so is for x86_64 linux version 0.7.7-b8. As inputs a sample cookie hole detection was used.
 
 ## Build
 
