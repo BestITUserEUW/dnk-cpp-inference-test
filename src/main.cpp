@@ -119,16 +119,13 @@ auto main(int argc, char* argv[]) -> int {
 
     auto size_bytes = chw.step[0] * chw.rows;
     std::cout << "Image Meta: \n";
-    std::cout << "\tWidth: " << chw.cols << "\n";
-    std::cout << "\tHeight: " << chw.rows << "\n";
-    std::cout << "\tColor Channels: " << chw.channels() << "\n";
-    std::cout << "\tWidth: " << chw.cols << "\n";
+    std::cout << "\tWidth: " << image.cols << "\n";
+    std::cout << "\tHeight: " << image.rows << "\n";
+    std::cout << "\tColor Channels: " << image.channels() << "\n";
+    std::cout << "\tWidth: " << image.cols << "\n";
     std::cout << "\tBytes: " << size_bytes << "\n";
 
-    // FIX_ME: Using image tensor from file yields detection results switchting to image_tensor_from_data does not yield
-    // any detections.
-    //  r = image_tensor_from_file(&image_tensor, input.value().c_str());
-    r = image_tensor_from_image_data(&image_tensor, chw.cols, chw.rows, chw.channels(),
+    r = image_tensor_from_image_data(&image_tensor, image.cols, image.rows, image.channels(),
                                      reinterpret_cast<char*>(chw.data), size_bytes);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "image_tensor_from_file");
@@ -168,7 +165,7 @@ auto main(int argc, char* argv[]) -> int {
         for (uintptr_t b = 0; b < results->bounding_boxes_length; b++) {
             auto& bbox = results->bounding_boxes[b];
 
-            std::cout << bbox.class_label.name << " :" << bbox.confidence << "\n";
+            std::cout << bbox.class_label.name << ": " << bbox.confidence << "\n";
             DrawBox(image, ToCvRect(bbox, image.cols, image.rows));
         }
     }

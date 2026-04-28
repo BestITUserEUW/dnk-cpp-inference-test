@@ -21,7 +21,3 @@ cmake --build build -j8
 - `--pat`: Personal Access Token for authentication
 - `--model`: Path to the `.denkflow` model file
 - `--input`: Path to the input image (loaded via `cv::imread`)
-
-## TODO
-
-- Fix image_tensor_from_image_data not yielding any detection outputs
