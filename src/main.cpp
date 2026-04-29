@@ -8,15 +8,20 @@
 
 #include <oryx/crt/stopwatch.hpp>
 #include <oryx/crt/argparse.hpp>
+#include <oryx/crt/scope_exit.hpp>
+#include <oryx/crt/enchantum.hpp>
 
 #include <denkflow.h>
 
 using namespace oryx;
 
+enum class InferenceType : std::uint8_t { detect, classify };
+
 constexpr std::string_view kInputTopic = "camera/image";
-constexpr std::string_view kOutputTopic = "bounding_box_filter_node/filtered_bounding_boxes";
+constexpr std::string_view kBboxTopic = "bounding_box_filter_node/filtered_bounding_boxes";
+constexpr std::string_view kClassifyTopic = "classification_node/output";
 constexpr std::string_view kOutFile = "out.png";
-constexpr auto kConfidenceTreshold = 0.5F;
+constexpr auto kConfidenceTreshold = 0.2F;
 
 constexpr int kFontFace{cv::FONT_HERSHEY_SIMPLEX};
 constexpr int kLineType{cv::LINE_8};
@@ -25,10 +30,10 @@ const cv::Scalar kColor{0, 0, 255};
 
 void PrintDnkError(enum DenkflowResult error_code, const char* function_name) {
     std::cout << function_name << ": " << error_code << "\n";
-    char error_buffer[ERROR_BUFFER_SIZE];
-    memset(error_buffer, 0, ERROR_BUFFER_SIZE);
-    get_last_error(error_buffer);
-    std::cout << " (" << static_cast<char*>(error_buffer) << ")" << "\n";
+    auto buffer = static_cast<char*>(calloc(ERROR_BUFFER_SIZE, sizeof(char)));
+    get_last_error(buffer);
+    std::cout << " (" << buffer << ")" << "\n";
+    free(buffer);
 }
 
 auto ToCvRect(const BoundingBox& box, int img_width, int img_height) -> cv::Rect {
@@ -48,7 +53,79 @@ auto ToCvRect(const BoundingBox& box, int img_width, int img_height) -> cv::Rect
 void DrawBox(const cv::Mat& img, const cv::Rect& box) { cv::rectangle(img, box, kColor, 1, kLineType); }
 
 void DrawText(const cv::Mat& img, const std::string& text, const cv::Point& point) {
-    cv::putText(img, text, point, kFontFace, kFontScale, kColor, kLineType);
+    cv::putText(img, text, point, kFontFace, kFontScale, kColor, 1, kLineType);
+}
+
+auto PostProcessObjectDetection(Receiver_Tensor* receiver, const cv::Mat& image) -> bool {
+    BoundingBoxTensor* tensor{};
+    BoundingBoxResults* results{};
+
+    crt::ScopeExit se{[&tensor, &results] {
+        if (tensor) free_object((void**)&tensor);
+        if (results) free_object((void**)&results);
+    }};
+
+    DenkflowResult r = receiver_receive_bounding_box_tensor(&tensor, receiver);
+    if (r != DenkflowResult_Ok) {
+        PrintDnkError(r, "initialized_pipeline_run");
+        return false;
+    }
+
+    r = bounding_box_tensor_to_objects(&results, tensor, kConfidenceTreshold);
+    if (r != DenkflowResult_Ok) {
+        PrintDnkError(r, "bounding_box_tensor_to_objects");
+        return false;
+    }
+
+    std::cout << "ObjectDetection results: \n";
+    if (results) {
+        for (uintptr_t b = 0; b < results->bounding_boxes_length; b++) {
+            auto& bbox = results->bounding_boxes[b];
+
+            std::cout << "\t" << bbox.class_label.name << ": " << bbox.confidence << "\n";
+            DrawBox(image, ToCvRect(bbox, image.cols, image.rows));
+        }
+    }
+    return true;
+}
+
+auto PostProcessClassification(Receiver_Tensor* receiver, const cv::Mat& image) {
+    ScalarTensor* tensor{};
+    ScalarResults* results{};
+
+    crt::ScopeExit se{[&tensor, &results] {
+        if (tensor) free_object((void**)&tensor);
+        if (results) free_object((void**)&results);
+    }};
+
+    DenkflowResult r = receiver_receive_scalar_tensor(&tensor, receiver);
+    if (r != DenkflowResult_Ok) {
+        PrintDnkError(r, "receiver_receive_scalar_tensor");
+        return false;
+    }
+
+    r = scalar_tensor_to_objects(&results, tensor);
+    if (r != DenkflowResult_Ok) {
+        PrintDnkError(r, "scalar_tensor_to_objects");
+        return false;
+    }
+
+    std::cout << "Classification results: \n";
+    int y_off = 20;
+    if (results) {
+        for (uintptr_t b = 0; b < results->scalar_batch_elements_length; b++) {
+            const auto& element = results->scalar_batch_elements[b];
+
+            for (uintptr_t c = 0; c < element.scalars_length; c++) {
+                const auto& scalar = element.scalars[c];
+
+                std::cout << "\t" << scalar.class_label.name << ": " << scalar.value << "\n";
+                DrawText(image, std::format("{}: {}", scalar.class_label.name, scalar.value), cv::Point(0, y_off));
+                y_off += 20;
+            }
+        }
+    }
+    return true;
 }
 
 auto main(int argc, char* argv[]) -> int {
@@ -56,8 +133,6 @@ auto main(int argc, char* argv[]) -> int {
     InitializedPipeline* initialized_pipeline{};
     ImageTensor* image_tensor{};
     Receiver_Tensor* receiver{};
-    BoundingBoxTensor* tensor{};
-    BoundingBoxResults* results{};
     HubLicenseSource* hub_license_source{};
 
     cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_ERROR);
@@ -82,8 +157,19 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
 
-    DenkflowResult r;
-    r = hub_license_source_from_pat(&hub_license_source, pat.value().c_str(), NULL_BYTE, NULL_BYTE);
+    auto type_str = parser.GetValue<std::string>("--type");
+    if (!type_str) {
+        std::cout << "--type is required (detect, classify)" << "\n";
+        return 1;
+    }
+
+    auto type = enchantum::cast<InferenceType>(type_str.value());
+    if (!type) {
+        std::cout << "Invalid inference type passed!" << "\n";
+        return 1;
+    }
+
+    DenkflowResult r = hub_license_source_from_pat(&hub_license_source, pat.value().c_str(), NULL_BYTE, NULL_BYTE);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "hub_license_source_from_pat");
         return 1;
@@ -104,7 +190,9 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
 
-    r = initialized_pipeline_subscribe(&receiver, initialized_pipeline, kOutputTopic.data());
+    r = initialized_pipeline_subscribe(
+        &receiver, initialized_pipeline,
+        type.value() == InferenceType::detect ? kBboxTopic.data() : kClassifyTopic.data());
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "initialized_pipeline_subscribe");
         return 1;
@@ -145,36 +233,18 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
 
-    r = receiver_receive_bounding_box_tensor(&tensor, receiver);
-    if (r != DenkflowResult_Ok) {
-        PrintDnkError(r, "initialized_pipeline_run");
-        return 1;
-    }
-
-    r = bounding_box_tensor_to_objects(&results, tensor, kConfidenceTreshold);
-    if (r != DenkflowResult_Ok) {
-        PrintDnkError(r, "bounding_box_tensor_to_objects");
-        return 1;
+    if (type.value() == InferenceType::detect) {
+        PostProcessObjectDetection(receiver, image);
+    } else {
+        PostProcessClassification(receiver, image);
     }
 
     auto elapsed = sw.ElapsedMs();
     std::cout << "Pipeline took: " << elapsed.count() << " ms\n";
 
-    std::cout << "Detection Results: \n";
-    if (results) {
-        for (uintptr_t b = 0; b < results->bounding_boxes_length; b++) {
-            auto& bbox = results->bounding_boxes[b];
-
-            std::cout << bbox.class_label.name << ": " << bbox.confidence << "\n";
-            DrawBox(image, ToCvRect(bbox, image.cols, image.rows));
-        }
-    }
-
     cv::imwrite(std::string(kOutFile), image);
     std::cout << "Annotation saved to: " << kOutFile << "\n";
 
-    free_object((void**)&tensor);
-    free_object((void**)&results);
     free_object((void**)&hub_license_source);
     free_object((void**)&initialized_pipeline);
     free_object((void**)&receiver);
