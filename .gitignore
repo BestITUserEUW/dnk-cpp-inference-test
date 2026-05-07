@@ -1,4 +1,4 @@
 .vscode
 data
-build
+build*
 *.png

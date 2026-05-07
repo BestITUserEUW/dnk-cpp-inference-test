@@ -22,7 +22,7 @@ find_package(oryx-crt-cpp REQUIRED)
 
 find_library(LIB_DENKFLOW denkflow 
     HINTS 
-        "${CMAKE_SOURCE_DIR}/external/lib"
+        "${CMAKE_SOURCE_DIR}/external/lib/${CMAKE_SYSTEM_PROCESSOR}"
 )
 
 add_executable(${PROJECT_NAME}
@@ -48,6 +48,9 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     -Wuninitialized 
     -Wno-unused-function 
     -Wunused-variable
-    $<$<CONFIG:Release>:-g0> 
     $<$<CONFIG:Release>:-O3>
+)
+
+target_link_options(${PROJECT_NAME} PUBLIC
+    -static-libgcc -static-libstdc++
 )

@@ -181,9 +181,6 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
 
-    pipeline_with_intra_threads(pipeline, 16);  // Threads for parallelism within operators
-    pipeline_with_inter_threads(pipeline, 4);   // Threads for parallelism between operators
-
     r = initialize_pipeline(&initialized_pipeline, &pipeline);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "initialize_pipeline");
