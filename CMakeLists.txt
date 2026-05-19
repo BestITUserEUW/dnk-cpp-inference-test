@@ -1,5 +1,4 @@
-cmake_policy(SET CMP0146 OLD)
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.29)
 
 project(dnk-inference-cpp LANGUAGES CXX)
 
@@ -19,18 +18,14 @@ add_subdirectory(thirdParty)
 
 find_package(OpenCV REQUIRED)
 find_package(oryx-crt-cpp REQUIRED)
-
-find_library(LIB_DENKFLOW denkflow 
-    HINTS 
-        "${CMAKE_SOURCE_DIR}/external/lib/${CMAKE_SYSTEM_PROCESSOR}"
-)
+find_library(LIB_DENKFLOW denkflow)
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_SOURCE_DIR}/external/include
+    ${DEPS_INSTALL_PATH}/include
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -48,9 +43,6 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     -Wuninitialized 
     -Wno-unused-function 
     -Wunused-variable
+    $<$<CONFIG:Release>:-g0>
     $<$<CONFIG:Release>:-O3>
-)
-
-target_link_options(${PROJECT_NAME} PUBLIC
-    -static-libgcc -static-libstdc++
 )

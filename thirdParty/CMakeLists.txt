@@ -10,5 +10,6 @@ set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:${DEPS_INSTALL_PATH}/lib/pkgconf
 set(ENV{PKG_CONFIG_LIBDIR} "${DEPS_INSTALL_PATH}/lib/pkgconfig")
 set(ENV{PKG_CONFIG_SYSROOT_DIR} "/")
 
+BuildTarget(denkflow)
 BuildTarget(opencv)
 BuildTarget(oryx-crt-cpp)
