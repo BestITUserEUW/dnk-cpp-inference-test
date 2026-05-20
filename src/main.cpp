@@ -30,13 +30,13 @@ const cv::Scalar kColor{0, 0, 255};
 
 void PrintDnkError(enum DenkflowResult error_code, const char* function_name) {
     std::cout << function_name << ": " << error_code << "\n";
-    auto buffer = static_cast<char*>(calloc(ERROR_BUFFER_SIZE, sizeof(char)));
-    get_last_error(buffer);
+    auto buffer = static_cast<char*>(calloc(DENKFLOW_ERROR_BUFFER_SIZE, sizeof(char)));
+    denkflow_get_last_error(buffer);
     std::cout << " (" << buffer << ")" << "\n";
     free(buffer);
 }
 
-auto ToCvRect(const BoundingBox& box, int img_width, int img_height) -> cv::Rect {
+auto ToCvRect(const DenkflowBoundingBox& box, int img_width, int img_height) -> cv::Rect {
     float x1 = box.x1 * img_width;
     float y1 = box.y1 * img_height;
     float x2 = box.x2 * img_width;
@@ -56,22 +56,22 @@ void DrawText(const cv::Mat& img, const std::string& text, const cv::Point& poin
     cv::putText(img, text, point, kFontFace, kFontScale, kColor, 1, kLineType);
 }
 
-auto PostProcessObjectDetection(Receiver_Tensor* receiver, const cv::Mat& image) -> bool {
-    BoundingBoxTensor* tensor{};
-    BoundingBoxResults* results{};
+auto PostProcessObjectDetection(DenkflowReceiverTensor* receiver, const cv::Mat& image) -> bool {
+    DenkflowBoundingBoxTensor* tensor{};
+    DenkflowBoundingBoxResults* results{};
 
     crt::ScopeExit se{[&tensor, &results] {
-        if (tensor) free_object((void**)&tensor);
-        if (results) free_object((void**)&results);
+        if (tensor) denkflow_free_object((void**)&tensor);
+        if (results) denkflow_free_object((void**)&results);
     }};
 
-    DenkflowResult r = receiver_receive_bounding_box_tensor(&tensor, receiver);
+    DenkflowResult r = denkflow_receiver_receive_bounding_box_tensor(&tensor, receiver);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "initialized_pipeline_run");
         return false;
     }
 
-    r = bounding_box_tensor_to_objects(&results, tensor, kConfidenceTreshold);
+    r = denkflow_bounding_box_tensor_to_objects(&results, tensor, kConfidenceTreshold);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "bounding_box_tensor_to_objects");
         return false;
@@ -89,22 +89,22 @@ auto PostProcessObjectDetection(Receiver_Tensor* receiver, const cv::Mat& image)
     return true;
 }
 
-auto PostProcessClassification(Receiver_Tensor* receiver, const cv::Mat& image) {
-    ScalarTensor* tensor{};
-    ScalarResults* results{};
+auto PostProcessClassification(DenkflowReceiverTensor* receiver, const cv::Mat& image) {
+    DenkflowScalarTensor* tensor{};
+    DenkflowScalarResults* results{};
 
     crt::ScopeExit se{[&tensor, &results] {
-        if (tensor) free_object((void**)&tensor);
-        if (results) free_object((void**)&results);
+        if (tensor) denkflow_free_object((void**)&tensor);
+        if (results) denkflow_free_object((void**)&results);
     }};
 
-    DenkflowResult r = receiver_receive_scalar_tensor(&tensor, receiver);
+    DenkflowResult r = denkflow_receiver_receive_scalar_tensor(&tensor, receiver);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "receiver_receive_scalar_tensor");
         return false;
     }
 
-    r = scalar_tensor_to_objects(&results, tensor);
+    r = denkflow_scalar_tensor_to_objects(&results, tensor);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "scalar_tensor_to_objects");
         return false;
@@ -129,14 +129,14 @@ auto PostProcessClassification(Receiver_Tensor* receiver, const cv::Mat& image) 
 }
 
 auto main(int argc, char* argv[]) -> int {
-    Pipeline* pipeline{};
-    InitializedPipeline* initialized_pipeline{};
-    ImageTensor* image_tensor{};
-    Receiver_Tensor* receiver{};
-    HubLicenseSource* hub_license_source{};
+    DenkflowPipeline* pipeline{};
+    DenkflowInitializedPipeline* initialized_pipeline{};
+    DenkflowImageTensor* image_tensor{};
+    DenkflowReceiverTensor* receiver{};
+    DenkflowHubLicenseSource* hub_license_source{};
 
     cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_ERROR);
-    set_log_level("INFO");
+    denkflow_set_log_level("INFO");
 
     auto parser = crt::ArgumentParser(argc, argv);
     auto pat = parser.GetValue<std::string>("--pat");
@@ -169,25 +169,25 @@ auto main(int argc, char* argv[]) -> int {
         return 1;
     }
 
-    DenkflowResult r = hub_license_source_from_pat(&hub_license_source, pat.value().c_str(), NULL_BYTE, NULL_BYTE);
+    DenkflowResult r = denkflow_hub_license_source_from_pat(&hub_license_source, pat.value().c_str(), nullptr, nullptr);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "hub_license_source_from_pat");
         return 1;
     }
 
-    r = pipeline_from_denkflow(&pipeline, model.value().c_str(), hub_license_source);
+    r = denkflow_pipeline_from_denkflow(&pipeline, model.value().c_str(), hub_license_source);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "pipeline_from_denkflow");
         return 1;
     }
 
-    r = initialize_pipeline(&initialized_pipeline, &pipeline);
+    r = denkflow_initialize_pipeline(&initialized_pipeline, &pipeline);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "initialize_pipeline");
         return 1;
     }
 
-    r = initialized_pipeline_subscribe(
+    r = denkflow_initialized_pipeline_subscribe(
         &receiver, initialized_pipeline,
         type.value() == InferenceType::detect ? kBboxTopic.data() : kClassifyTopic.data());
     if (r != DenkflowResult_Ok) {
@@ -196,35 +196,31 @@ auto main(int argc, char* argv[]) -> int {
     }
 
     auto image = cv::imread(input.value());
-
-    std::vector<cv::Mat> channels(image.channels());
-    cv::split(image, channels);
-    cv::Mat chw;
-    cv::vconcat(channels, chw);
-
-    auto size_bytes = chw.step[0] * chw.rows;
     std::cout << "Image Meta: \n";
     std::cout << "\tWidth: " << image.cols << "\n";
     std::cout << "\tHeight: " << image.rows << "\n";
     std::cout << "\tColor Channels: " << image.channels() << "\n";
     std::cout << "\tWidth: " << image.cols << "\n";
-    std::cout << "\tBytes: " << size_bytes << "\n";
+    std::cout << "\tBytes: " << image.step[0] * image.rows << "\n";
 
-    r = image_tensor_from_image_data(&image_tensor, image.cols, image.rows, image.channels(),
-                                     reinterpret_cast<char*>(chw.data), size_bytes);
-    if (r != DenkflowResult_Ok) {
-        PrintDnkError(r, "image_tensor_from_file");
-        return 1;
-    }
+    cv::Mat float_image;
+    image.convertTo(float_image, CV_32F, 1.0 / 255.0);
+
+    std::vector<cv::Mat> channels;
+    cv::split(float_image, channels);
+
+    cv::Mat chw;
+    cv::vconcat(channels, chw);
+    r = denkflow_image_tensor_from_buffer_unsafe(&image_tensor, chw.ptr<float>(), 1, 3, image.rows, image.cols);
 
     crt::Stopwatch sw{};
-    r = initialized_pipeline_publish_image_tensor(initialized_pipeline, kInputTopic.data(), &image_tensor);
+    r = denkflow_initialized_pipeline_publish_image_tensor(initialized_pipeline, kInputTopic.data(), &image_tensor);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "initialized_pipeline_publish_image_tensor");
         return 1;
     }
 
-    r = initialized_pipeline_run(initialized_pipeline, 8000);
+    r = denkflow_initialized_pipeline_run(initialized_pipeline, 10000);
     if (r != DenkflowResult_Ok) {
         PrintDnkError(r, "initialized_pipeline_run");
         return 1;
@@ -242,8 +238,8 @@ auto main(int argc, char* argv[]) -> int {
     cv::imwrite(std::string(kOutFile), image);
     std::cout << "Annotation saved to: " << kOutFile << "\n";
 
-    free_object((void**)&hub_license_source);
-    free_object((void**)&initialized_pipeline);
-    free_object((void**)&receiver);
+    denkflow_free_object((void**)&hub_license_source);
+    denkflow_free_object((void**)&initialized_pipeline);
+    denkflow_free_object((void**)&receiver);
     return 0;
 }
