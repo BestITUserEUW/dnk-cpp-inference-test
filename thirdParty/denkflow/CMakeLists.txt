@@ -12,7 +12,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
     set(ARCH "x86-64")
 endif()
 
-set(VERSION "0.8.0")
+set(VERSION "0.8.1")
 set(URL "https://github.com/DENKweitGmbH/DENKflow-C-API/releases/download/${VERSION}")
 set(LOC_ARCHIVE_FPATH "${CMAKE_CURRENT_BINARY_DIR}/libdenkflow.zip")
 

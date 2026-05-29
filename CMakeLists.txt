@@ -46,3 +46,7 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     $<$<CONFIG:Release>:-g0>
     $<$<CONFIG:Release>:-O3>
 )
+
+target_link_options(${PROJECT_NAME} PUBLIC
+    -static-libgcc -static-libstdc++ $<$<CONFIG:Release>:-s>
+)
